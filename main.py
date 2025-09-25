@@ -8,11 +8,11 @@ app = FastAPI()
 @app.get("/", response_class=HTMLResponse)
 async def read_items():
     return """
-  <!DOCTYPE html>
+ <!DOCTYPE html>
 <html>
 <head>
   <title>Nhận diện vật màu trắng như giấy</title>
-  <script async src="https://docs.opencv.org/4t>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -88,33 +88,34 @@ async def read_items():
           let contours = new cv.MatVector();
           let hierarchy = new cv.Mat();
 
-          // Chuyển sang HSV để dễ lọc màu trắng
+          // Chuyển sang HSV
           cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
           cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
 
-          // Ngưỡng màu trắng (có thể điều chỉnh nếu ánh sáng thay đổi)
+          // Ngưỡng màu trắng
           let lowWhite = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 200, 0]);
           let highWhite = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 30, 255, 255]);
           cv.inRange(hsv, lowWhite, highWhite, mask);
 
-          // Tìm contour vùng trắng
+          // Tìm contour
           cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
           let maxArea = 0;
-          let maxContour = null;
+          let maxContourIndex = -1;
 
           for (let i = 0; i < contours.size(); ++i) {
             let cnt = contours.get(i);
             let area = cv.contourArea(cnt);
             if (area > maxArea) {
               maxArea = area;
-              maxContour = cnt;
+              maxContourIndex = i;
             }
           }
 
-          if (maxContour && maxArea > 10000) {
+          if (maxContourIndex !== -1 && maxArea > 10000) {
+            let cnt = contours.get(maxContourIndex);
             let approx = new cv.Mat();
-            cv.approxPolyDP(maxContour, approx, 0.02 * cv.arcLength(maxContour, true), true);
+            cv.approxPolyDP(cnt, approx, 0.02 * cv.arcLength(cnt, true), true);
             cv.drawContours(src, new cv.MatVector([approx]), -1, new cv.Scalar(0, 255, 0, 255), 3);
 
             let corners = [];
@@ -126,10 +127,12 @@ async def read_items():
 
             console.log("📐 Tọa độ vùng trắng:", corners);
             approx.delete();
+            cnt.delete();
           }
 
           cv.imshow('canvas', src);
-          src.delete(); hsv.delete(); mask.delete(); contours.delete(); hierarchy.delete(); lowWhite.delete(); highWhite.delete();
+          src.delete(); hsv.delete(); mask.delete(); contours.delete(); hierarchy.delete();
+          lowWhite.delete(); highWhite.delete();
         }
 
         requestAnimationFrame(processFrame);
@@ -141,8 +144,6 @@ async def read_items():
 </body>
 </html>
 
-
-
     """
 
 @app.get("/main")
@@ -151,6 +152,7 @@ async def main():
 
 
 #uvicorn.run(app, host="0.0.0.0", port=90)
+
 
 
 
