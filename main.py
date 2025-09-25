@@ -8,20 +8,31 @@ app = FastAPI()
 @app.get("/", response_class=HTMLResponse)
 async def read_items():
     return """
-    <!DOCTYPE html>
+   <!DOCTYPE html>
 <html>
 <head>
   <title>Nhận diện giấy A4 hình chữ nhật</title>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
+  https://docs.opencv.org/4.x/opencv.js
   <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
     video, canvas {
       max-width: 100%;
       border: 1px solid black;
+      margin-top: 10px;
+    }
+    #controls {
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
-  <h2>Camera iPhone - Nhận diện giấy A4 hình chữ nhật</h2>
+  <h2>📷 Nhận diện giấy A4 hình chữ nhật bằng Camera</h2>
+  <div id="controls">
+    <button id="switchCameraBtn">🔄 Chuyển camera trước/sau</button>
+  </div>
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas"></canvas>
 
@@ -29,56 +40,65 @@ async def read_items():
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const switchCameraBtn = document.getElementById('switchCameraBtn');
 
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => {
-        video.srcObject = stream;
-      });
+    let currentStream;
+    let useFrontCamera = true;
+
+    function stopStream() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function startCamera() {
+      stopStream();
+      const constraints = {
+        video: {
+          facingMode: useFrontCamera ? 'user' : 'environment'
+        }
+      };
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+          currentStream = stream;
+          video.srcObject = stream;
+        })
+        .catch(err => {
+          console.error("Không thể truy cập camera:", err);
+        });
+    }
+
+    switchCameraBtn.onclick = () => {
+      useFrontCamera = !useFrontCamera;
+      startCamera();
+    };
+
+    startCamera();
 
     cv['onRuntimeInitialized'] = () => {
       const processFrame = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        let src = cv.imread(canvas);
-        let gray = new cv.Mat();
-        let edges = new cv.Mat();
-        let contours = new cv.MatVector();
-        let hierarchy = new cv.Mat();
+          let src = cv.imread(canvas);
+          let gray = new cv.Mat();
+          let edges = new cv.Mat();
+          let contours = new cv.MatVector();
+          let hierarchy = new cv.Mat();
 
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-        cv.Canny(gray, edges, 50, 150);
-        cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+          cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+          cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+          cv.Canny(gray, edges, 50, 150);
+          cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        for (let i = 0; i < contours.size(); ++i) {
-          let cnt = contours.get(i);
-          let approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.02 * cv.arcLength(cnt, true), true);
+          for (let i = 0; i < contours.size(); ++i) {
+            let cnt = contours.get(i);
+            let approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.02 * cv.arcLength(cnt, true), true);
 
-          if (approx.rows === 4) {
-            let isRectangle = true;
-            for (let j = 0; j < 4; j++) {
-              let pt1 = approx.intPtr(j);
-              let pt2 = approx.intPtr((j + 1) % 4);
-              let pt3 = approx.intPtr((j + 2) % 4);
-
-              let v1 = { x: pt2[0] - pt1[0], y: pt2[1] - pt1[1] };
-              let v2 = { x: pt3[0] - pt2[0], y: pt3[1] - pt2[1] };
-
-              let dot = v1.x * v2.x + v1.y * v2.y;
-              let mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-              let mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-              let angle = Math.acos(dot / (mag1 * mag2)) * (180 / Math.PI);
-
-              if (Math.abs(angle - 90) > 15) {
-                isRectangle = false;
-                break;
-              }
-            }
-
-            if (isRectangle) {
+            if (approx.rows === 4 && cv.isContourConvex(approx)) {
               let rect = cv.boundingRect(approx);
               let aspectRatio = rect.width / rect.height;
               if (aspectRatio > 0.65 && aspectRatio < 0.75) {
@@ -89,17 +109,18 @@ async def read_items():
                   corners.push({ x: point[0], y: point[1] });
                   cv.circle(src, new cv.Point(point[0], point[1]), 5, new cv.Scalar(255, 0, 255, 255), -1);
                 }
-                console.log("Tọa độ 4 góc giấy A4 hình chữ nhật:", corners);
+                console.log("📐 Tọa độ 4 góc giấy A4:", corners);
               }
             }
+
+            approx.delete();
+            cnt.delete();
           }
 
-          approx.delete();
-          cnt.delete();
+          cv.imshow('canvas', src);
+          src.delete(); gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
         }
 
-        cv.imshow('canvas', src);
-        src.delete(); gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
         requestAnimationFrame(processFrame);
       };
 
@@ -109,6 +130,7 @@ async def read_items():
 </body>
 </html>
 
+
     """
 
 @app.get("/main")
@@ -117,6 +139,7 @@ async def main():
 
 
 #uvicorn.run(app, host="0.0.0.0", port=90)
+
 
 
 
