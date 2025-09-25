@@ -112,10 +112,11 @@ async def read_items():
     """
 
 @app.get("/main")
-async def root():
+async def main():
     return {"message": "Hoang Tuan"}       
 
 
 #uvicorn.run(app, host="0.0.0.0", port=90)
+
 
 
