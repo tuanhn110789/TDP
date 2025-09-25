@@ -8,11 +8,11 @@ app = FastAPI()
 @app.get("/", response_class=HTMLResponse)
 async def read_items():
     return """
-   <!DOCTYPE html>
+  <!DOCTYPE html>
 <html>
 <head>
-  <title>Nhận diện giấy A4 hình chữ nhật</title>
-  https://docs.opencv.org/4.x/opencv.js
+  <title>Nhận diện vật màu trắng như giấy</title>
+  <script async src="https://docs.opencv.org/4t>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -29,7 +29,7 @@ async def read_items():
   </style>
 </head>
 <body>
-  <h2>📷 Nhận diện giấy A4 hình chữ nhật bằng Camera</h2>
+  <h2>📷 Nhận diện vật màu trắng như giấy</h2>
   <div id="controls">
     <button id="switchCameraBtn">🔄 Chuyển camera trước/sau</button>
   </div>
@@ -83,42 +83,53 @@ async def read_items():
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
           let src = cv.imread(canvas);
-          let gray = new cv.Mat();
-          let edges = new cv.Mat();
+          let hsv = new cv.Mat();
+          let mask = new cv.Mat();
           let contours = new cv.MatVector();
           let hierarchy = new cv.Mat();
 
-          cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-          cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-          cv.Canny(gray, edges, 50, 150);
-          cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+          // Chuyển sang HSV để dễ lọc màu trắng
+          cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+          cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+
+          // Ngưỡng màu trắng (có thể điều chỉnh nếu ánh sáng thay đổi)
+          let lowWhite = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 200, 0]);
+          let highWhite = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 30, 255, 255]);
+          cv.inRange(hsv, lowWhite, highWhite, mask);
+
+          // Tìm contour vùng trắng
+          cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          let maxArea = 0;
+          let maxContour = null;
 
           for (let i = 0; i < contours.size(); ++i) {
             let cnt = contours.get(i);
-            let approx = new cv.Mat();
-            cv.approxPolyDP(cnt, approx, 0.02 * cv.arcLength(cnt, true), true);
+            let area = cv.contourArea(cnt);
+            if (area > maxArea) {
+              maxArea = area;
+              maxContour = cnt;
+            }
+          }
 
-            if (approx.rows === 4 && cv.isContourConvex(approx)) {
-              let rect = cv.boundingRect(approx);
-              let aspectRatio = rect.width / rect.height;
-              if (aspectRatio > 0.65 && aspectRatio < 0.75) {
-                cv.drawContours(src, contours, i, new cv.Scalar(0, 255, 0, 255), 3);
-                let corners = [];
-                for (let j = 0; j < 4; j++) {
-                  let point = approx.intPtr(j);
-                  corners.push({ x: point[0], y: point[1] });
-                  cv.circle(src, new cv.Point(point[0], point[1]), 5, new cv.Scalar(255, 0, 255, 255), -1);
-                }
-                console.log("📐 Tọa độ 4 góc giấy A4:", corners);
-              }
+          if (maxContour && maxArea > 10000) {
+            let approx = new cv.Mat();
+            cv.approxPolyDP(maxContour, approx, 0.02 * cv.arcLength(maxContour, true), true);
+            cv.drawContours(src, new cv.MatVector([approx]), -1, new cv.Scalar(0, 255, 0, 255), 3);
+
+            let corners = [];
+            for (let j = 0; j < approx.rows; j++) {
+              let point = approx.intPtr(j);
+              corners.push({ x: point[0], y: point[1] });
+              cv.circle(src, new cv.Point(point[0], point[1]), 5, new cv.Scalar(255, 0, 255, 255), -1);
             }
 
+            console.log("📐 Tọa độ vùng trắng:", corners);
             approx.delete();
-            cnt.delete();
           }
 
           cv.imshow('canvas', src);
-          src.delete(); gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
+          src.delete(); hsv.delete(); mask.delete(); contours.delete(); hierarchy.delete(); lowWhite.delete(); highWhite.delete();
         }
 
         requestAnimationFrame(processFrame);
@@ -131,6 +142,7 @@ async def read_items():
 </html>
 
 
+
     """
 
 @app.get("/main")
@@ -139,6 +151,7 @@ async def main():
 
 
 #uvicorn.run(app, host="0.0.0.0", port=90)
+
 
 
 
